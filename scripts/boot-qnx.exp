@@ -1,0 +1,53 @@
+#!/usr/bin/expect -f
+# Automate QNX boot via U-Boot on FVP_TC3
+# Waits for U-Boot prompt, copies QNX IFS to correct address, jumps to entry
+#
+# The QNX IFS ELF is loaded at board.dram+0x30000000 = 0xb0000000
+# ELF LOAD segment at file offset 0x200 -> vaddr 0x80000200
+# Entry point: 0x80000800
+
+set timeout 120
+log_user 1
+
+spawn telnet localhost 5002
+
+expect {
+    "Hit any key" {
+        send "\r"
+        exp_continue
+    }
+    "TOTAL_COMPUTE#" {
+        send "\r"
+    }
+    timeout {
+        puts "TIMEOUT waiting for U-Boot"
+        exit 1
+    }
+}
+
+sleep 1
+expect "TOTAL_COMPUTE#"
+
+# Copy QNX IFS LOAD segment from ELF location to its linked address
+# Source: 0xb0000000 (dram+0x30000000) + 0x200 (ELF LOAD offset) = 0xb0000200
+# Dest: 0x80000200 (LOAD segment vaddr)
+# Size: 0x4c5000 (slightly over actual size, safe to round up)
+puts "\n>>> Copying QNX IFS to 0x80000200..."
+send "cp.b 0xb0000200 0x80000200 0x4c5000\r"
+expect "TOTAL_COMPUTE#"
+sleep 2
+
+# Jump to QNX startup entry point
+puts "\n>>> Jumping to QNX entry 0x80000800..."
+send "go 0x80000800\r"
+
+# Wait for output
+set timeout 90
+expect {
+    -re ".+" {
+        exp_continue
+    }
+    timeout {
+        puts "\n>>> TIMEOUT after go <<<"
+    }
+}

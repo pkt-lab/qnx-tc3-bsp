@@ -1,0 +1,75 @@
+[-optional]
+[+keeplinked]
+[image=0x80000000]
+[virtual=aarch64le,elf] boot = {
+    # -S forces serial debug to specific UART
+    # 0x2A400000 = AP NS UART (already initialized by TF-A)
+    startup-tc3 -v -P1
+    PATH=/proc/boot:/sbin:/bin:/usr/bin:/usr/sbin LD_LIBRARY_PATH=/proc/boot:/lib:/usr/lib:/lib/dll procnto-smp-instr -v
+}
+
+[+script] startup-script = {
+    SYSNAME=nto
+    TERM=qansi
+    ENV=/etc/profile
+    procmgr_symlink ../../proc/boot/ldqnx-64.so.2 /usr/lib/ldqnx-64.so.2
+    pipe
+    display_msg "=== QNX 8.0 on FVP_TC3 ==="
+    # Use AP UART (already initialized by TF-A)
+    devc-serpl011 -e -F -b115200 0x2A400000,95
+    waitfor /dev/ser1
+    reopen /dev/ser1
+    display_msg "Shell ready"
+    slogger2
+    [+session] ksh &
+}
+
+[uid=0 gid=0]
+[type=link] /bin/sh=/bin/ksh
+[type=link] /tmp=/dev/shmem
+[type=link] /dev/console=/dev/ser1
+ldqnx-64.so.2=ldqnx-64.so.2
+/lib/libc.so=libc.so
+/lib/libm.so=libm.so
+/lib/libgcc_s.so=libgcc_s.so
+/lib/libsecpol.so=libsecpol.so
+/lib/libslog2.so=libslog2.so
+/lib/libtracelog.so=libtracelog.so
+/lib/libregex.so=libregex.so
+/lib/libqh.so=libqh.so
+/lib/libslog2shim.so=libslog2shim.so
+/lib/libcatalog.so=libcatalog.so
+/lib/libdevice-publisher.so=libdevice-publisher.so
+/usr/lib/libbacktrace.so=libbacktrace.so
+/usr/lib/libc++.so=libc++.so
+/sbin/devc-serpl011=devc-serpl011
+/sbin/pipe=pipe
+/sbin/mqueue=mqueue
+/bin/ksh=ksh
+/bin/waitfor=waitfor
+/bin/pidin=pidin
+/bin/slog2info=slog2info
+/bin/slogger2=slogger2
+/usr/sbin/dumper=dumper
+/usr/bin/toybox=toybox
+[type=link] /bin/cat=/usr/bin/toybox
+[type=link] /bin/ls=/usr/bin/toybox
+[type=link] /bin/echo=/usr/bin/toybox
+[type=link] /bin/uname=/usr/bin/toybox
+/etc/profile = {
+export HOME=/
+export SYSNAME=nto
+export TERM=qansi
+export PATH=/proc/boot:/sbin:/bin:/usr/bin:/usr/sbin
+export LD_LIBRARY_PATH=/proc/boot:/lib:/usr/lib:/lib/dll
+export PS1="[QNX-FVP]# "
+}
+[uid=0 gid=0 perms=0644] /etc/passwd = {
+root:x:0:0:Superuser:/root:/bin/sh
+}
+[uid=0 gid=0 perms=0644] /etc/shadow = {
+root:@S@NKlWES1quMp1wmqugkUSnFEpPGn58kIs4wQOgDDNs06vimR+bbGPUKM+9P6jbFUzo3Rm+Qe5MS+17xKhwaeJEg==@Mjg5ZTJiMTM0YTRjYTE2ZGFjMDdhZTFlY2NlMDVmNmE=:1468494669:0:0
+}
+[uid=0 gid=0 perms=0644] /etc/group = {
+root:x:0:root
+}
