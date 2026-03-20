@@ -14,6 +14,24 @@
  * limitations under the License.
  */
 #include <startup.h>
+#if defined(__aarch64__)
+#include <aarch64/psci.h>
+#else
+#include <arm/psci.h>
+#endif
+
+/*
+ * TC3 FVP CPU MPIDR values (from tc-base.dtsi):
+ *   subcluster0: 2x Cortex-A520 (cpu@0, cpu@100)
+ *   subcluster1: 4x Cortex-A725 (cpu@200..cpu@500)
+ *   subcluster2: 2x Cortex-X925 (cpu@600, cpu@700)
+ */
+static const unsigned long tc3_mpidr[] = {
+    0x0000, 0x0100,             /* subcluster0: A520 */
+    0x0200, 0x0300, 0x0400, 0x0500,  /* subcluster1: A725 */
+    0x0600, 0x0700,             /* subcluster2: X925 */
+};
+#define TC3_NUM_CPUS (sizeof(tc3_mpidr) / sizeof(tc3_mpidr[0]))
 
 unsigned
 board_smp_num_cpu()
@@ -21,12 +39,12 @@ board_smp_num_cpu()
     unsigned num = fdt_num_cpu();
     if (num == 0) {
         if (max_cpus != ~0u) {
-            num = max_cpus;
+            num = (max_cpus <= TC3_NUM_CPUS) ? max_cpus : TC3_NUM_CPUS;
         } else {
-            /* TC3 default: 8 cores */
-            num = 8;
+            num = TC3_NUM_CPUS;
         }
     }
+    kprintf("SMP: num_cpus=%u\n", num);
     return num;
 }
 
@@ -39,12 +57,26 @@ board_smp_init(struct smp_entry *smp, unsigned num_cpus)
 int
 board_smp_start(unsigned cpu, void (*start)(void))
 {
-    int rc;
-    kprintf("SMP: starting CPU %u via PSCI\n", cpu);
-    rc = psci_smp_start(cpu, start);
-    if (rc != 0)
-        kprintf("SMP: CPU %u psci_smp_start returned %d\n", cpu, rc);
-    return rc;
+    unsigned long mpidr;
+
+    if (cpu < TC3_NUM_CPUS) {
+        mpidr = tc3_mpidr[cpu];
+    } else {
+        mpidr = psci_cpu_id(cpu);
+    }
+
+    kprintf("SMP: starting CPU %u MPIDR=0x%lx entry=%p\n", cpu, mpidr, start);
+
+    /* Ensure PSCI is using SMC and the correct CPU_ON function ID */
+    psci_call = &psci_smc;
+    long rc = (*psci_call)(PSCI_CPU_ON, mpidr, (uintptr_t)start, 0);
+    kprintf("SMP: PSCI CPU_ON returned %ld\n", rc);
+
+    if (rc != PSCI_SUCCESS) {
+        kprintf("SMP: CPU %u failed (PSCI rc=%ld)\n", cpu, rc);
+        return 0;
+    }
+    return 1;
 }
 
 unsigned
