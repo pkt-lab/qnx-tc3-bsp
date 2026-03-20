@@ -132,6 +132,7 @@ int main(int argc, char **argv, char **envv)
 
     alloc_ram(shdr->ram_paddr, shdr->ram_size, 1);
 
+    hypervisor_set_options(HYP_FLAG_ENABLED);
     hypervisor_init(0);
     init_smp();
 
