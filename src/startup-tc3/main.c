@@ -63,12 +63,17 @@ int main(int argc, char **argv, char **envv)
     int      opt;
     paddr_t  memsize = TC3_DRAM_SIZE_DEFAULT;
 
-    if (boot_regs[FDT_REG] == 0) {
-        /* U-Boot 'go' doesn't pass FDT in x0; use known TC3 location */
+    /*
+     * U-Boot 'go' passes (argc, argv) in x0/x1, not an FDT pointer.
+     * Detect this: if x0 is not in DRAM range, use the known TC3 FDT
+     * address where TF-A/U-Boot place the device tree.
+     */
+    if (boot_regs[FDT_REG] < TC3_DRAM_BASE ||
+        boot_regs[FDT_REG] >= TC3_DRAM_BASE + TC3_DRAM_SIZE_DEFAULT) {
         boot_regs[FDT_REG] = TC3_FDT_ADDR;
     }
-    if (boot_regs[FDT_REG]) {
-        fdt_init(boot_regs[FDT_REG]);
+    fdt_init(boot_regs[FDT_REG]);
+    if (fdt_size != 0) {
         fdt_psci_configure();
     }
 

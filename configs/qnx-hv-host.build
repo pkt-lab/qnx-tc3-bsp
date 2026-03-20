@@ -2,9 +2,9 @@
 [+keeplinked]
 [image=0x82000000]
 [virtual=aarch64le,elf] boot = {
-    # -S forces serial debug to specific UART
-    # 0x2A400000 = AP NS UART (already initialized by TF-A)
-    startup-tc3 -v -P1
+    # All 8 cores enabled by default (2xA520 + 4xA725 + 2xX925)
+    # Add -P1 for single-core, -P2 for dual-core, etc.
+    startup-tc3 -v
     PATH=/proc/boot:/sbin:/bin:/usr/bin:/usr/sbin LD_LIBRARY_PATH=/proc/boot:/lib:/usr/lib:/lib/dll procnto-smp-instr -v
 }
 
