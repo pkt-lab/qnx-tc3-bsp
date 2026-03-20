@@ -33,15 +33,18 @@ board_smp_num_cpu()
 void
 board_smp_init(struct smp_entry *smp, unsigned num_cpus)
 {
-    /* TC3 uses GICv3, IPI via GIC redistributor */
-    smp->send_ipi = (void *)&sendipi_gic_v2;
+    /* TC3 uses GIC-700 (GICv3); IPI callout set by init_intrinfo_tc3() */
 }
 
 int
 board_smp_start(unsigned cpu, void (*start)(void))
 {
-    /* Always use PSCI (TF-A provides it) */
-    return psci_smp_start(cpu, start);
+    int rc;
+    kprintf("SMP: starting CPU %u via PSCI\n", cpu);
+    rc = psci_smp_start(cpu, start);
+    if (rc != 0)
+        kprintf("SMP: CPU %u psci_smp_start returned %d\n", cpu, rc);
+    return rc;
 }
 
 unsigned

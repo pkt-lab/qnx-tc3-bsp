@@ -52,12 +52,12 @@ Loading IFS...done
 ## Quick Start
 
 ```bash
-# Prerequisites: QNX SDP 8.0, FVP_TC3, TC3 firmware stack (TC23.1)
+# Prerequisites: QNX SDP 8.0, FVP_TC3, TC3 firmware stack (TC23.1),
+#   QNX BSP tree with startup lib built (default: ~/qnx-fvp)
 source ~/qnx800/qnxsdp-env.sh
 
-# Build
+# Build (syncs source into BSP tree, builds, installs to $QNX_TARGET)
 ./scripts/build-startup.sh
-cp src/startup-tc3/aarch64/le/startup-tc3 $QNX_TARGET/aarch64le/boot/sys/
 ./scripts/build-ifs.sh
 
 # Run
