@@ -27,6 +27,7 @@ extern void init_intrinfo_tc3(void);
 
 #define TC3_DRAM_BASE       0x80000000ULL
 #define TC3_DRAM_SIZE_DEFAULT (2ULL * 1024 * 1024 * 1024)
+#define TC3_FDT_ADDR        0x80000000ULL  /* TF-A places FDT here */
 #define DEFAULT_CPU_FREQ    100000000
 
 #if defined(__aarch64__)
@@ -62,6 +63,10 @@ int main(int argc, char **argv, char **envv)
     int      opt;
     paddr_t  memsize = TC3_DRAM_SIZE_DEFAULT;
 
+    if (boot_regs[FDT_REG] == 0) {
+        /* U-Boot 'go' doesn't pass FDT in x0; use known TC3 location */
+        boot_regs[FDT_REG] = TC3_FDT_ADDR;
+    }
     if (boot_regs[FDT_REG]) {
         fdt_init(boot_regs[FDT_REG]);
         fdt_psci_configure();

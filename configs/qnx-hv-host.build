@@ -1,6 +1,6 @@
 [-optional]
 [+keeplinked]
-[image=0x80000000]
+[image=0x82000000]
 [virtual=aarch64le,elf] boot = {
     # -S forces serial debug to specific UART
     # 0x2A400000 = AP NS UART (already initialized by TF-A)
