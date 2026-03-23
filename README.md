@@ -1,53 +1,17 @@
 # QNX TC3 FVP BSP
 
-Open-source Board Support Package (BSP) startup driver for booting QNX on the
+Board Support Package for booting QNX 8.0 on the
 [Arm Total Compute 3 (TC3)](https://developer.arm.com/Tools%20and%20Software/Fixed%20Virtual%20Platforms)
 Fixed Virtual Platform (FVP).
 
-## What This Is
+## Features
 
-A custom `startup-tc3` driver that initializes TC3 hardware for QNX:
-- **GIC-700** (GICv3/v4) interrupt controller at TC3 addresses
-- **PL011 UART** serial console
-- **ARMv8 generic timer**
-- **Memory map** for TC3 DRAM layout
-- **PSCI** for reboot and SMP CPU bringup
-
-This BSP enables QNX 8.0 to boot to an interactive shell on the FVP_TC3 simulator.
-
-## Verified Boot Output
-
-```
-TC3 FVP startup
-CurrentEL = EL2
-CPU freq: 100000000 Hz, Timer freq: 100000000 Hz
-ARM GIC-?00 r3p0, arch v4.0 detected
-FP field=1 SIMD field=1
-cpu->flags = 0xc0008c62
-TC3 startup complete, launching procnto
-Loading IFS...done
-=== QNX 8.0 on FVP_TC3 ===
-```
-
-```
-[QNX-FVP]# pidin
-     pid tid name                         prio STATE
-       1   1 /proc/boot/procnto-smp-instr   0f READY
-       3   1 sbin/devc-serpl011            10r RECEIVE
-       4   1 bin/slogger2                  10r RECEIVE
-       5   1 bin/ksh                       10r SIGSUSPEND
-```
-
-## TC3 Hardware Map
-
-| Device | Address | Notes |
-|--------|---------|-------|
-| GIC-700 GICD | `0x30000000` | GICv3 distributor |
-| GIC-700 GICR | `0x30080000` | GICv3 redistributor |
-| Board PL011 UART | `0x1c090000` | Startup console (SPI 37) |
-| AP NS PL011 UART | `0x2A400000` | U-Boot/shell console (SPI 63) |
-| DRAM | `0x80000000` | 2 GB |
-| CPUs | 8 cores | 2x Cortex-A520 + 4x Cortex-A725 + 2x Cortex-X925 |
+- **8-core SMP** — all 3 subclusters (2×A520 + 4×A725 + 2×X925) via PSCI
+- **EL2 VHE hypervisor** — qvm guest support
+- **Networking** — SMSC LAN91C111 driver (ported from FreeBSD), ping + SSH working
+- **SSH access** — `ssh -p 8022 root@<host>` (empty password)
+- **FDT passthrough** — device tree from TF-A/U-Boot
+- **Raw binary boot** — no `cp.b` needed, just `go <entry>`
 
 ## Quick Start
 
@@ -56,64 +20,77 @@ Loading IFS...done
 #   QNX BSP tree with startup lib built (default: ~/qnx-fvp)
 source ~/qnx800/qnxsdp-env.sh
 
-# Build (syncs source into BSP tree, builds, installs to $QNX_TARGET)
-./scripts/build-startup.sh
-./scripts/build-ifs.sh
+# Build
+./scripts/build-startup.sh    # Compile startup-tc3
+./scripts/build-ifs.sh        # Build QNX IFS image
 
-# Run
+# Run (boots to shell with networking + SSH)
 ./scripts/run-fvp.sh
+
+# Connect via SSH
+ssh -p 8022 root@<amd-host-ip>
+```
+
+## What Boots
+
+```
+QNX localhost 8.0.0 Arm_TC3_FVP aarch64le
+CPU:AARCH64 Release:8.0.0  FreeMem:7657MB/7824MB
+Processor1-8: 2×A520 + 4×A725 + 2×X925 (100MHz FPU)
+smc0: 172.20.51.1 (SMSC LAN91C111, 100baseTX)
+sshd: port 22 (forwarded to host:8022)
 ```
 
 ## Repository Structure
 
 ```
-src/startup-tc3/
-├── main.c                 # Hardware init: UART, GIC, RAM, timer, FPU
-├── board_smp.c            # SMP CPU bringup via PSCI
-├── init_asinfo.c          # Address space info
-├── pinfo.mk               # Build metadata
-├── Makefile
-└── aarch64/
-    ├── init_intrinfo.c    # GIC-700 interrupt controller init
-    ├── _start.S           # Entry point: FPU enable, jump to cstart
-    ├── Makefile
-    └── le/Makefile
+src/
+├── startup-tc3/          # QNX startup driver (GIC-700, SMP, FDT, VHE)
+└── devs-smc/             # SMSC LAN91C111 network driver (FreeBSD port)
 
 configs/
-└── qnx-hv-host.build     # mkifs build file
+└── qnx-hv-host.build    # IFS build file (startup script, binaries, config)
 
 scripts/
-├── build-startup.sh       # Build startup-tc3 binary
-├── build-ifs.sh           # Build QNX IFS image
-├── run-fvp.sh             # Launch FVP and boot QNX
-└── boot-qnx.exp           # expect script for U-Boot automation
+├── build-startup.sh      # Build startup-tc3 via QNX BSP tree
+├── build-ifs.sh          # Build QNX IFS + raw binary
+├── build-guest.sh        # Build qvm guest binary
+├── run-fvp.sh            # Launch FVP and boot QNX
+└── boot-qnx.exp          # U-Boot automation (expect script)
+
+guests/
+├── hello-guest.S          # Bare-metal qvm guest (assembly)
+└── hello-guest.qvmconf    # qvm guest configuration
+
+docs/
+└── ARCHITECTURE.md        # Design decisions and hardware map
 ```
 
 ## Boot Method
 
-The TC3 firmware stack (RSE → SCP → TF-A → U-Boot) boots normally. The QNX IFS
-ELF is preloaded into FVP DRAM via the `--data` parameter. An expect script
-automates U-Boot to copy the IFS LOAD segment to its linked address and jump to
-the entry point.
-
-**Important**: Do not load the Linux fitImage alongside the QNX IFS. U-Boot will
-auto-boot Linux instead of dropping to the prompt.
+The TC3 firmware stack (RSE → SCP → TF-A → U-Boot) boots normally. The QNX
+raw binary is preloaded into FVP DRAM at its linked address. An expect script
+waits for the U-Boot prompt and issues `go 0x82000800`.
 
 ## Prerequisites
 
-- **QNX SDP 8.0** with `startup-armv8_fm` BSP headers installed
+- **QNX SDP 8.0** with BSP startup library built (`~/qnx-fvp`)
 - **FVP_TC3** v11.26.16 (Arm Fast Models)
-- **TC3 firmware stack** (TC23.1) built with U-Boot as BL33
-- **expect** for automated U-Boot interaction
+- **TC3 firmware stack** (TC23.1) with virtio_net DTS patch and `simple-bus` root
+- **expect** for U-Boot automation
 
-See [docs/SETUP.md](docs/SETUP.md) for detailed environment setup.
+## Network Driver
+
+The SMSC LAN91C111 driver (`devs-smc.so`) is ported from FreeBSD `sys/dev/smc/`
+(BSD-2-Clause). It uses the QNX io-sock FreeBSD driver API with minimal changes:
+- Added `ofwbus` registration for root-level FDT nodes
+- Added `iosock_module_version` symbol
+- Uses `mods-phy.so` for PHY detection (smcphy)
+- FDT device tree loaded at 0x88000000 via `-u arg` (standard QNX boot)
 
 ## License
 
 [Apache License 2.0](LICENSE)
 
-All source code in this repository is original work or derived from
-Apache 2.0 licensed components. No proprietary QNX SDP code is included.
-The QNX SDP runtime libraries (`procnto`, `libc`, etc.) required at runtime
-are not part of this repository and must be obtained separately under their
-own license terms.
+Source code is original work or derived from Apache 2.0 / BSD-2-Clause licensed
+components. No proprietary QNX SDP code is included.
