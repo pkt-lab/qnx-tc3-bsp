@@ -1,0 +1,42 @@
+diff --git a/fdts/tc-base.dtsi b/fdts/tc-base.dtsi
+index 2a50c65ce..51117ce78 100644
+--- a/fdts/tc-base.dtsi
++++ b/fdts/tc-base.dtsi
+@@ -37,7 +37,8 @@
+ #endif /* !TC_DPU_USE_SCMI_CLK */
+ 
+ / {
+-	compatible = "arm,tc";
++	compatible = "arm,tc", "simple-bus";
++	ranges;
+ 	interrupt-parent = <&gic>;
+ 	#address-cells = <2>;
+ 	#size-cells = <2>;
+diff --git a/fdts/tc-fvp.dtsi b/fdts/tc-fvp.dtsi
+index 436931bc1..7fbb4ed0a 100644
+--- a/fdts/tc-fvp.dtsi
++++ b/fdts/tc-fvp.dtsi
+@@ -81,4 +81,10 @@
+ 		/* spec lists this wrong */
+ 		interrupts = <GIC_SPI VIRTIO_BLOCK_INT IRQ_TYPE_LEVEL_HIGH 0>;
+ 	};
++
++	virtio_net@VIRTIO_NET_ADDR {
++		compatible = "virtio,mmio";
++		reg = <0x0 ADDRESSIFY(VIRTIO_NET_ADDR) 0x0 0x200>;
++		interrupts = <GIC_SPI VIRTIO_NET_INT IRQ_TYPE_LEVEL_HIGH 0>;
++	};
+ };
+diff --git a/fdts/tc3.dts b/fdts/tc3.dts
+index 018befc45..5c7fd9668 100644
+--- a/fdts/tc3.dts
++++ b/fdts/tc3.dts
+@@ -39,6 +39,8 @@
+ 
+ #define VIRTIO_BLOCK_ADDR		1c130000
+ #define VIRTIO_BLOCK_INT		204
++#define VIRTIO_NET_ADDR			1c150000
++#define VIRTIO_NET_INT			205
+ 
+ #include "tc-common.dtsi"
+ #if TARGET_FLAVOUR_FVP
