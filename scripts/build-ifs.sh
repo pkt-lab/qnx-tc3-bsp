@@ -28,8 +28,14 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
+# Copy guest binaries to a location mkifs can find
+GUEST_DIR="$REPO_ROOT/guests"
+if [ -f "$GUEST_DIR/hello-guest.bin" ]; then
+    cp "$GUEST_DIR/hello-guest.bin" "$OUTPUT_DIR/"
+fi
+
 echo "Building IFS from $BUILD_FILE..."
-mkifs -v "$BUILD_FILE" "$OUTPUT_DIR/qnx-hv-host.ifs" 2>&1 | tail -5
+MKIFS_PATH="$OUTPUT_DIR:$MKIFS_PATH" mkifs -v "$BUILD_FILE" "$OUTPUT_DIR/qnx-hv-host.ifs" 2>&1 | tail -5
 
 echo "Creating raw binary for BL33..."
 ntoaarch64-objcopy -O binary "$OUTPUT_DIR/qnx-hv-host.ifs" "$OUTPUT_DIR/qnx-hv-host.bin"

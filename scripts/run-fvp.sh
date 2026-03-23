@@ -26,6 +26,18 @@ FVP_BIN="${FVP_BIN:-$HOME/FVP_TC3/models/Linux64_GCC-9.3/FVP_TC3}"
 DEPLOY="${DEPLOY:-$HOME/tc3-workspace/output/tc3/buildroot/fvp/deploy}"
 LOG_DIR="/tmp/qnx-fvp-logs"
 DRAM_BASE=0x80000000
+# DTB loaded at 0x88000000 (128MB offset, same as TI BSPs)
+# Must not overlap with IFS at 0x82000000 or sysram at 0x80000000
+FDT_DRAM_OFFSET=0x08000000
+# Use full TC3 DTB (from TF-A build) for boot + io-sock
+# Falls back to minimal DTB if TF-A DTB not available
+TFA_DTB="${DEPLOY}/../tmp_build/tfa/build/tc/debug/fdts/tc3.dtb"
+if [ -f "$TFA_DTB" ]; then
+    QNX_DTB="$TFA_DTB"
+else
+    QNX_DTB="$REPO_ROOT/output/minimal-smc.dtb"
+    echo "WARNING: TF-A DTB not found, using minimal DTB (no CPU/RAM info)"
+fi
 
 if [ ! -f "$QNX_BIN" ]; then
     echo "ERROR: QNX binary not found: $QNX_BIN"
@@ -87,6 +99,10 @@ nohup "$FVP_BIN" \
   --data css.sms.rse.sram0="${DEPLOY}/rse_encrypted_cm_provisioning_bundle_0.bin@0x400" \
   --data css.sms.rse.sram1="${DEPLOY}/rse_encrypted_dm_provisioning_bundle_0.bin@0x0" \
   --data board.dram="${QNX_BIN}@${DRAM_OFFSET}" \
+  --data board.dram="${QNX_DTB}@${FDT_DRAM_OFFSET}" \
+  -C board.smsc_91c111.enabled=1 \
+  -C board.hostbridge.userNetworking=1 \
+  -C board.hostbridge.userNetPorts="8022=22" \
   -C css.cluster0.subcluster0.has_ete=1 \
   -C css.cluster0.subcluster1.has_ete=1 \
   -C css.cluster0.subcluster2.has_ete=1 \

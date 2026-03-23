@@ -4,7 +4,7 @@
 [virtual=aarch64le,elf] boot = {
     # All 8 cores enabled by default (2xA520 + 4xA725 + 2xX925)
     # Add -P1 for single-core, -P2 for dual-core, etc.
-    startup-tc3 -v
+    startup-tc3 -v -u arg
     PATH=/proc/boot:/sbin:/bin:/usr/bin:/usr/sbin LD_LIBRARY_PATH=/proc/boot:/lib:/usr/lib:/lib/dll procnto-smp-instr -v
 }
 
@@ -15,12 +15,33 @@
     procmgr_symlink ../../proc/boot/ldqnx-64.so.2 /usr/lib/ldqnx-64.so.2
     pipe
     display_msg "=== QNX 8.0 on FVP_TC3 ==="
-    # Use AP UART (already initialized by TF-A)
+    # Serial console
     devc-serpl011 -e -F -b115200 0x2A400000,95
     waitfor /dev/ser1
     reopen /dev/ser1
     display_msg "Shell ready"
     slogger2
+
+    # System services
+    mqueue
+    devc-pty
+
+    # Entropy (seed file for FVP — no hardware TRNG)
+    toybox cp /etc/random.seed /dev/shmem/random.seed
+    random -s /dev/shmem/random.seed
+    waitfor /dev/random 5
+
+    # Networking
+    io-sock -m fdt -m phy -d smc
+    waitfor /dev/socket 5
+    waitfor /dev/io-sock/smc0 5
+    ifconfig smc0 172.20.51.1 netmask 255.255.255.0 up
+    route add default 172.20.51.254
+
+    # SSH server (ksh wrapper needed for absolute path requirement)
+    ksh -c "/usr/sbin/sshd -h /etc/ssh/ssh_host_ed25519_key"
+    display_msg "Network: 172.20.51.1 | SSH: port 22"
+
     [+session] ksh &
 }
 
@@ -34,6 +55,7 @@ ldqnx-64.so.2=ldqnx-64.so.2
 /lib/libgcc_s.so=libgcc_s.so
 /lib/libsecpol.so=libsecpol.so
 /lib/libslog2.so=libslog2.so
+/lib/libslog2parse.so.1=libslog2parse.so.1
 /lib/libtracelog.so=libtracelog.so
 /lib/libregex.so=libregex.so
 /lib/libqh.so=libqh.so
@@ -42,8 +64,44 @@ ldqnx-64.so.2=ldqnx-64.so.2
 /lib/libdevice-publisher.so=libdevice-publisher.so
 /lib/libfsnotify.so.1=libfsnotify.so.1
 /usr/lib/libz.so.2=libz.so.2
+/lib/libqcrypto.so.1.0=libqcrypto.so.1.0
+/lib/dll/qcrypto-openssl-3.so=qcrypto-openssl-3.so
+/lib/libcrypto.so.3=libcrypto.so.3
 /usr/lib/libbacktrace.so=libbacktrace.so
 /usr/lib/libc++.so=libc++.so
+/lib/libsocket.so.4=libsocket.so.4
+/usr/lib/libexpat.so.2=libexpat.so.2
+/lib/libjail.so.1=libjail.so.1
+# Networking
+/sbin/io-sock=io-sock
+/lib/dll/mods-fdt.so=mods-fdt.so
+/lib/dll/mods-phy.so=mods-phy.so
+/lib/dll/devs-vtnet_mmio.so=devs-vtnet_mmio.so
+/lib/dll/devs-smc.so=devs-smc.so
+/sbin/ifconfig=ifconfig
+/sbin/ping=ping
+/sbin/route=route
+/bin/mount=mount
+/sbin/sysctl=sysctl
+# QVM hypervisor
+/sbin/qvm=qvm
+/usr/lib/libfdt.so=libfdt.so
+/usr/lib/libfdt.so.1=libfdt.so.1
+/lib/dll/vdev-pl011.so=vdev-pl011.so
+/lib/dll/vdev-virtio-console.so=vdev-virtio-console.so
+/lib/dll/vdev-virtio-net.so=vdev-virtio-net.so
+# Guest files
+# Guest files (hello-guest.bin copied to output/ by build-ifs.sh)
+/guests/hello-guest.bin=hello-guest.bin
+/guests/hello-guest.qvmconf = {
+system hello-guest
+ram 0x40000000,16M
+cpu
+load /guests/hello-guest.bin
+vdev pl011
+    loc 0x1c090000
+    intr gic:37
+}
 /sbin/devc-serpl011=devc-serpl011
 /sbin/pipe=pipe
 /sbin/mqueue=mqueue
@@ -53,11 +111,23 @@ ldqnx-64.so.2=ldqnx-64.so.2
 /bin/slog2info=slog2info
 /bin/slogger2=slogger2
 /usr/sbin/dumper=dumper
+/usr/sbin/random=random
+# SSH
+/usr/sbin/sshd=${QNX_TARGET}/aarch64le/usr/sbin/sshd
+/usr/libexec/sshd-session=${QNX_TARGET}/aarch64le/usr/libexec/sshd-session
+/usr/libexec/sftp-server=${QNX_TARGET}/aarch64le/usr/libexec/sftp-server
+/usr/bin/ssh-keygen=${QNX_TARGET}/aarch64le/usr/bin/ssh-keygen
+/sbin/devc-pty=${QNX_TARGET}/aarch64le/sbin/devc-pty
+/lib/libpam.so.2=${QNX_TARGET}/aarch64le/usr/lib/libpam.so.2
 /usr/bin/toybox=toybox
 [type=link] /bin/cat=/usr/bin/toybox
 [type=link] /bin/ls=/usr/bin/toybox
 [type=link] /bin/echo=/usr/bin/toybox
 [type=link] /bin/uname=/usr/bin/toybox
+[uid=0 gid=0 perms=0644] /etc/random.seed=../configs/random.seed
+[uid=0 gid=0 perms=0644] /etc/qcrypto.conf = {
+openssl-3 tags=*
+}
 /etc/profile = {
 export HOME=/
 export SYSNAME=nto
@@ -68,10 +138,32 @@ export PS1="[QNX-FVP]# "
 }
 [uid=0 gid=0 perms=0644] /etc/passwd = {
 root:x:0:0:Superuser:/root:/bin/sh
+sshd:x:44:44:sshd privsep:/var/chroot/sshd:/bin/false
 }
 [uid=0 gid=0 perms=0644] /etc/shadow = {
-root:@S@NKlWES1quMp1wmqugkUSnFEpPGn58kIs4wQOgDDNs06vimR+bbGPUKM+9P6jbFUzo3Rm+Qe5MS+17xKhwaeJEg==@Mjg5ZTJiMTM0YTRjYTE2ZGFjMDdhZTFlY2NlMDVmNmE=:1468494669:0:0
+root::1468494669:0:0
+sshd:*:1468494669:0:0
 }
 [uid=0 gid=0 perms=0644] /etc/group = {
 root:x:0:root
+sshd:x:44:
 }
+# sshd config
+[type=dir dperms=0755] /etc/ssh
+[uid=0 gid=0 perms=0600] /etc/ssh/ssh_host_ed25519_key=../configs/ssh_host_ed25519_key
+[uid=0 gid=0 perms=0644] /etc/ssh/sshd_config = {
+Port 22
+PermitRootLogin yes
+PasswordAuthentication yes
+PermitEmptyPasswords yes
+Subsystem sftp /usr/libexec/sftp-server
+UseDns no
+}
+# Required directories
+[type=dir] /var
+[type=dir] /var/db
+[type=dir] /var/run
+[type=dir dperms=0755] /var/chroot
+[type=dir dperms=0755] /var/chroot/sshd
+[type=dir dperms=0700] /root
+[type=dir dperms=0700] /root/.ssh
