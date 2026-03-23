@@ -2,20 +2,28 @@
 
 ## Overview
 
-This project boots QNX 8.0 on the Arm Total Compute 3 (TC3) Fixed Virtual Platform (FVP). Since no QNX BSP exists for TC3, we created a custom `startup-tc3` driver and use a hybrid boot approach: the TC3 firmware stack (RSE→SCP→TF-A→U-Boot) initializes the hardware, then U-Boot loads the QNX IFS into memory and jumps to it.
+This project boots QNX 8.0 on the Arm Total Compute 3 (TC3) Fixed Virtual Platform (FVP) with all 8 heterogeneous cores, EL2 VHE hypervisor support, and FDT-based hardware discovery. The TC3 firmware stack (RSE→SCP→TF-A→U-Boot) initializes the hardware, then U-Boot loads the QNX raw binary at its linked address and jumps to it.
 
 ## TC3 FVP Hardware Map
 
 | Component | Address | Notes |
 |-----------|---------|-------|
 | DRAM | 0x80000000 | 2GB (configurable up to 64GB) |
+| FDT | 0x80000000 | Placed by TF-A, modified by U-Boot |
+| QNX IFS | 0x82000000 | Relocated to preserve FDT |
 | GIC-700 GICD | 0x30000000 | GICv3 distributor |
 | GIC-700 GICR | 0x30080000 | GICv3 redistributor |
-| AP NS UART (PL011) | 0x2A400000 | SPI 63 (IRQ 95), used by U-Boot/Linux |
-| AP Secure UART | 0x2A410000 | Used by TF-A |
-| Board UART (PL011) | 0x1c090000 | SPI 37 (IRQ 69), used by QNX startup minidriver |
-| CPUs | 8 cores | 2xA520 + 4xA725 + 2xX925 in 3 subclusters |
-| Timer | ARMv8 generic | PPIs 13, 14, 11, 10 |
+| AP NS UART (PL011) | 0x2A400000 | SPI 63 (IRQ 95), QNX shell console |
+| Board UART (PL011) | 0x1c090000 | SPI 37 (IRQ 69), startup boot messages |
+| Timer | ARMv8 generic | 100 MHz |
+
+## CPU Topology
+
+| CPU | MPIDR | Subcluster | Core | MIDR |
+|-----|-------|------------|------|------|
+| 0-1 | 0x000, 0x100 | 0 | Cortex-A520 | 410fd801 |
+| 2-5 | 0x200-0x500 | 1 | Cortex-A725 | 410fd870 |
+| 6-7 | 0x600, 0x700 | 2 | Cortex-X925 | 410fd850 |
 
 ## Boot Flow
 
@@ -29,61 +37,51 @@ FVP_TC3 Power On
     ├── Hafnium (S-EL2) — Secure Partition Manager
     ├── OP-TEE + Trusted Services (S-EL1/S-EL0)
     │
-    ├── U-Boot (BL33, NS-EL2→EL1) — Normal world bootloader
+    ├── U-Boot (BL33, NS-EL2) — Normal world bootloader
     │       │
     │       ├── U-Boot autoboot: tries fitImage at 0xa0000000
-    │       │   (falls through since QNX IFS isn't a fitImage)
+    │       │   (falls through since no fitImage loaded)
     │       │
-    │       └── [via expect script]
-    │           ├── cp.b <src> 0x82000200 <size>  (copy QNX LOAD segment)
-    │           └── go 0x82000800                  (jump to QNX entry)
+    │       └── [via expect script] go 0x82000800
     │
-    └── QNX startup-tc3 (EL2 or EL1)
-            ├── select_debug() → PL011 at 0x1c090000 (board UART)
-            ├── add_ram(0x80000000, 2GB)
-            ├── init_mmu()
-            ├── init_intrinfo_tc3() → GIC-700 at 0x30000000
-            ├── init_qtime(), init_cpuinfo()
-            └── procnto-smp-instr → QNX shell
+    └── QNX startup-tc3 (NS-EL2)
+            ├── FDT init from 0x80000000
+            ├── VHE hypervisor enable
+            ├── SMP: 8 cores via PSCI CPU_ON
+            ├── GIC-700 init
+            ├── MMU, timer, cpuinfo
+            └── procnto-smp-instr → devc-serpl011 → ksh shell
 ```
 
 ## Key Design Decisions
 
-### Why use U-Boot as intermediate loader?
+### Raw binary boot via U-Boot `go`
 
-The TC3 firmware stack uses RSE to cryptographically verify all boot images (BL1, BL2, BL31, BL33). Replacing U-Boot as BL33 requires rebuilding RSE with new image hashes — a full rebuild of TF-A + RSE + flash-image. Using U-Boot as the loader avoids this: the firmware chain boots normally with Linux images, then we load QNX via U-Boot's memory commands.
+The QNX `.bin` (raw binary from `objcopy`) is loaded directly at its linked address (`0x82000200`) in FVP DRAM via the `--data` parameter. U-Boot just does `go 0x82000800` — no `cp.b`, no ELF parsing. This is the standard QNX U-Boot boot method used by all modern BSPs (NXP i.MX8MP, TI AM62x, etc.).
 
-### Why not use bootelf?
+`bootelf` silently fails on aarch64 for QNX ELF files (known U-Boot bug — no cache cleanup, no EL handling in the 64-bit ELF loader).
 
-U-Boot's `bootelf` command on aarch64 silently fails for QNX ELF files. The `cp.b` + `go` approach manually copies the ELF LOAD segment to its linked address and jumps to the entry point. This works reliably.
+### FDT address detection
 
-### Why does QNX run at EL1 (not EL2)?
+U-Boot's `go` passes `(argc, argv)` in x0/x1 (C calling convention), not an FDT pointer. `boot_regs[0]` contains `1` (argc), not a valid address. Startup checks if x0 is within DRAM range; if not, uses the known TC3 FDT address `0x80000000` where TF-A places the device tree.
 
-U-Boot's `go` command jumps at the current exception level. On TC3 with Hafnium as S-EL2 SPM, the normal world runs at EL1 (not EL2). QNX startup detects this and reports "Hypervisor support disabled". This means `qvm` (QNX hypervisor) cannot run. To enable EL2, we would need to either disable Hafnium or configure it to allow NS-EL2 access.
+### Hardcoded MPIDR table for SMP
 
-### Why the custom startup-tc3 BSP?
+QNX's `psci_cpu_id()` returns the CPU index as-is (0, 1, 2...) which are not valid MPIDRs on TC3. The TC3 MPIDR values (0x0, 0x100, 0x200..0x700) are hardcoded in `board_smp.c` from `tc-base.dtsi`. PSCI CPU_ON is called directly via `psci_smc`.
 
-The stock `startup-armv8_fm` hardcodes GIC addresses for the standard Foundation Model (`GICD=0x2f000000`, `GICR=0x2f100000`). TC3's GIC-700 is at different addresses (`0x30000000`, `0x30080000`). Accessing the wrong GIC address crashes the FVP model. Our `startup-tc3` uses the correct TC3 addresses.
+Note: `fdt_num_cpu()` correctly returns 8 from the FDT, but `fdt_psci_configure()` doesn't match `"arm,psci-1.0"` (only matches `"arm,psci"`). This is harmless — `psci_cpu_on_cmd` stays at `-1` and the default `PSCI_CPU_ON` function ID is used.
 
-## Current Status (2026-03-20)
+### IFS at 0x82000000
+
+The IFS was relocated from `0x80000000` to `0x82000000` to preserve the FDT placed by TF-A at DRAM base. The 32MB gap is sufficient for any FDT.
+
+### Custom startup-tc3 BSP
+
+The stock `startup-armv8_fm` hardcodes GIC addresses for the standard Foundation Model (`GICD=0x2f000000`). TC3's GIC-700 is at `0x30000000`/`0x30080000`. Wrong GIC addresses crash the FVP.
+
+## Remaining Work
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| TC3 firmware boot (RSE→SCP→TF-A→U-Boot) | **Working** | Full chain boots |
-| QNX startup-tc3 on FVP | **Working** | Boots to QNX shell (single-CPU) |
-| Serial output (board UART) | **Working** | 0x1c090000, startup minidriver output visible |
-| Shell console (AP UART) | **Working** | devc-serpl011 on 0x2A400000 (SPI 63) |
-| QNX shell (procnto + ksh) | **Working** | pidin, slogger2, toybox utils available |
-| Exception level | **EL2** | Verified via startup output `CurrentEL = EL2` |
-| Dynamic IFS boot | **Working** | run-fvp.sh extracts ELF LOAD info automatically |
-| SMP (secondary CPUs) | **Not tested** | PSCI bringup implemented, needs validation |
-| FDT passthrough | **Not working** | `fdt_init()` fails; U-Boot modifies FDT in-place |
-| qvm (hypervisor) | **Not tested** | EL2 available but `hypervisor_init(0)` reports disabled |
-
-## Known Issues
-
-1. **FDT not recognized by QNX**: IFS relocated to `0x82000000` to preserve FDT at `0x80000000`, and startup has a fallback to read FDT from `0x80000000`. However `fdt_init()` still fails — U-Boot modifies the FDT (adds kaslr-seed node, etc.) which may make it incompatible. Startup falls back to hardcoded 2GB RAM, which works.
-
-2. **Hypervisor support disabled at EL2**: Despite running at EL2, `hypervisor_init(0)` reports disabled. May need explicit HCR_EL2 configuration or different `hypervisor_init()` parameters.
-
-3. **SMP untested**: `board_smp.c` implements PSCI-based CPU bringup but multi-core boot has not been validated. Currently limited to `-P1` (single CPU).
+| qvm guest | **Not tested** | VHE hypervisor enabled, needs guest config and vdev modules |
+| Network (virtio-net) | **Not yet** | TC3 FVP has `board.virtio_net` at 0x1c180000 (disabled by default) |
