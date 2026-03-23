@@ -1,6 +1,5 @@
 #!/usr/bin/expect -f
 # Automate QNX boot via U-Boot on FVP_TC3
-# The raw binary is already at its linked address in DRAM.
 # Just wait for U-Boot prompt and issue 'go <entry>'.
 #
 # Usage: boot-qnx.exp [entry_addr]
@@ -33,9 +32,10 @@ expect {
 sleep 1
 expect "TOTAL_COMPUTE#"
 
-# Jump to QNX startup entry point
-puts "\n>>> go $entry"
-send "go $entry\r"
+# Jump to QNX startup, passing FDT address (loaded at DRAM+0x08000000)
+# Same pattern as TI J784S4: go <ifs_addr> <fdt_addr>
+puts "\n>>> go $entry 0x88000000"
+send "go $entry 0x88000000\r"
 
 # Wait for output
 set timeout 90

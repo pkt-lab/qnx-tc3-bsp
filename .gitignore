@@ -1,2 +1,4 @@
 output/
 *.sym
+configs/ssh_host_ed25519_key
+configs/ssh_host_ed25519_key.pub

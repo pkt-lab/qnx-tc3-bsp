@@ -1,0 +1,16 @@
+# Minimal bare-metal guest for TC3 FVP qvm
+system hello-guest
+
+# 16MB guest RAM at guest-physical 0x40000000
+ram 0x40000000,16M
+
+# One vCPU
+cpu
+
+# Load guest binary
+load /guests/hello-guest.bin
+
+# PL011 serial for guest output
+vdev pl011
+    loc 0x1c090000
+    intr gic:37

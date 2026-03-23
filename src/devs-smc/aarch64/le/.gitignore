@@ -1,0 +1,4 @@
+*.o
+*.dep
+*.pinfo
+devs-smc

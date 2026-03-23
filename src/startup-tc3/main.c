@@ -27,7 +27,7 @@ extern void init_intrinfo_tc3(void);
 
 #define TC3_DRAM_BASE       0x80000000ULL
 #define TC3_DRAM_SIZE_DEFAULT (2ULL * 1024 * 1024 * 1024)
-#define TC3_FDT_ADDR        0x80000000ULL  /* TF-A places FDT here */
+#define TC3_FDT_ADDR        0x80000000ULL  /* TF-A/U-Boot FDT (fallback) */
 #define DEFAULT_CPU_FREQ    100000000
 
 #if defined(__aarch64__)
@@ -64,15 +64,48 @@ int main(int argc, char **argv, char **envv)
     paddr_t  memsize = TC3_DRAM_SIZE_DEFAULT;
 
     /*
-     * U-Boot 'go' passes (argc, argv) in x0/x1, not an FDT pointer.
-     * Detect this: if x0 is not in DRAM range, use the known TC3 FDT
-     * address where TF-A/U-Boot place the device tree.
+     * Parse FDT address from U-Boot 'go <entry> <fdt_addr>'
+     *
+     * Standard QNX BSP flow (like TI J784S4):
+     *   U-Boot: fatload mmc 1 <fdt_addr> board.dtb
+     *   U-Boot: go <entry> <fdt_addr>
+     *   startup -u arg: reads FDT address from argv[1]
+     *
+     * U-Boot's 'go' passes (argc, argv) via C calling convention:
+     *   x0 = argc, x1 = argv pointer
+     *
+     * On TC3, U-Boot stores argv in high DRAM (0xf2b66dd8) which
+     * fdt_init_bootopt() can't access (not mapped by startup).
+     * We map it ourselves and call fdt_init() with the parsed address.
      */
-    if (boot_regs[FDT_REG] < TC3_DRAM_BASE ||
-        boot_regs[FDT_REG] >= TC3_DRAM_BASE + TC3_DRAM_SIZE_DEFAULT) {
-        boot_regs[FDT_REG] = TC3_FDT_ADDR;
+    {
+        paddr_t fdt_addr = 0;
+        uint64_t argc_val = boot_regs[0];
+        paddr_t argv_paddr = (paddr_t)boot_regs[1];
+
+        if (argc_val >= 2 && argv_paddr != 0) {
+            char **argv_mapped = startup_memory_map(
+                argc_val * sizeof(char *), argv_paddr, PROT_READ);
+            if (argv_mapped != NULL) {
+                paddr_t str_paddr = (paddr_t)(uintptr_t)argv_mapped[1];
+                startup_memory_unmap(argv_mapped);
+                if (str_paddr != 0) {
+                    char *str_mapped = startup_memory_map(32, str_paddr, PROT_READ);
+                    if (str_mapped != NULL) {
+                        fdt_addr = strtoul(str_mapped, NULL, 16);
+                        startup_memory_unmap(str_mapped);
+                    }
+                }
+            }
+        }
+
+        if (fdt_addr == 0)
+            fdt_addr = TC3_FDT_ADDR;
+
+        fdt_init(fdt_addr);
+        /* Set fdt_paddr so -u arg's fdt_asinfo() in init_system_private works */
+        fdt_paddr = fdt_addr;
     }
-    fdt_init(boot_regs[FDT_REG]);
     if (fdt_size != 0) {
         fdt_psci_configure();
     }
@@ -123,7 +156,6 @@ int main(int argc, char **argv, char **envv)
 
     if (fdt_size != 0) {
         init_raminfo_fdt();
-        fdt_asinfo();
     } else {
         kprintf("No FDT, adding RAM at 0x%x size 0x%x\n",
                 (unsigned)(TC3_DRAM_BASE), (unsigned)(memsize));
@@ -131,6 +163,8 @@ int main(int argc, char **argv, char **envv)
     }
 
     alloc_ram(shdr->ram_paddr, shdr->ram_size, 1);
+
+    /* fdt_asinfo() called by init_system_private() when -u arg is set */
 
     hypervisor_set_options(HYP_FLAG_ENABLED);
     hypervisor_init(0);
