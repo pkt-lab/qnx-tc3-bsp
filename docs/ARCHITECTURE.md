@@ -15,6 +15,8 @@ This project boots QNX 8.0 on the Arm Total Compute 3 (TC3) Fixed Virtual Platfo
 | GIC-700 GICR | 0x30080000 | GICv3 redistributor |
 | AP NS UART (PL011) | 0x2A400000 | SPI 63 (IRQ 95), QNX shell console |
 | Board UART (PL011) | 0x1c090000 | SPI 37 (IRQ 69), startup boot messages |
+| VirtIO block (MMIO) | 0x1c130000 | SPI 204 (IRQ 236), board.virtioblockdevice |
+| SMSC LAN91C111 | 0x18000000 | SPI 109 (IRQ 141), board.smsc_91c111 |
 | Timer | ARMv8 generic | 100 MHz |
 
 ## CPU Topology
@@ -50,7 +52,17 @@ FVP_TC3 Power On
             ├── SMP: 8 cores via PSCI CPU_ON
             ├── GIC-700 init
             ├── MMU, timer, cpuinfo
-            └── procnto-smp-instr → devc-serpl011 → ksh shell
+            └── procnto-smp-instr
+                ├── devb-virtio-fvp → /dev/vblk0 (VirtIO MMIO block)
+                │   └── dd → shmem → devb-loopback → ext2 mount /guests
+                ├── io-sock (smc0 + vdevpeer-net)
+                ├── dhcpcd (DHCP via writable /var/run)
+                ├── sshd (port 22, forwarded as 8022)
+                └── qvm @/guests/linux/linux-guest.qvmconf
+                    └── Linux 6.1 guest (2 vCPU, 256MB, buildroot)
+                        ├── GICv3, PL011 UART, arch timer
+                        ├── virtio-net (vdevpeer to host)
+                        └── virtio-blk (optional, host disk passthrough)
 ```
 
 ## Key Design Decisions
@@ -79,9 +91,25 @@ The IFS was relocated from `0x80000000` to `0x82000000` to preserve the FDT plac
 
 The stock `startup-armv8_fm` hardcodes GIC addresses for the standard Foundation Model (`GICD=0x2f000000`). TC3's GIC-700 is at `0x30000000`/`0x30080000`. Wrong GIC addresses crash the FVP.
 
+## VirtIO Block Driver (FVP Workaround)
+
+QNX's stock `devb-virtio` hangs on TC3 FVP because the FVP returns `QueueNumMax=256` for ALL queue indices (VirtIO spec requires 0 for non-existent queues). This causes `viod_find_mmio()` to loop forever scanning queues.
+
+`devb-virtio-fvp` works around this by configuring only queue 0 (skipping the scan). Root cause found via `pidin backtrace` → `ntoaarch64-objdump -d` disassembly of the queue scan loop.
+
+## QVM Linux Guest
+
+Linux 6.1.75 (TC3 buildroot) boots under QVM with:
+- 2 vCPUs (SMP confirmed), 256MB RAM
+- Initramfs loaded at explicit address 0x48000000 (QVM `initrd load` auto-placement has invalid magic bug)
+- Console logged to `/dev/shmem/linux-guest.log` via vdev pl011 tee redirect
+- vdev virtio-net with vdevpeer for host↔guest networking
+- vdev virtio-blk ready for persistent guest rootfs passthrough
+
 ## Remaining Work
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| qvm guest | **Not tested** | VHE hypervisor enabled, needs guest config and vdev modules |
-| Network (virtio-net) | **Not yet** | TC3 FVP has `board.virtio_net` at 0x1c180000 (disabled by default) |
+| Guest networking (vdevpeer) | **Config ready** | vp0 interface needs manual creation after guest boot |
+| Guest persistent rootfs | **Config ready** | vdev virtio-blk commented, needs guest-fs.img |
+| MPAM | **Not started** | Memory Partitioning and Monitoring (TC3 feature) |

@@ -32,6 +32,15 @@ vdev pl011
     intr gic:37
     hostdev >"|/usr/bin/toybox tee /dev/shmem/linux-guest.log"
 
+# VirtIO net — host↔guest networking via vdevpeer
+# Host side: io-sock loads mods-vdevpeer-net.so, creates vp0 interface
+# Guest side: sees /dev/eth0 (virtio-net), configure with ip/dhcp
+vdev virtio-net
+    loc 0x1c0e0000
+    intr gic:42
+    peer /dev/qvm/linux-guest/vnet
+    name vnet0
+
 # VirtIO block for persistent guest rootfs (optional)
 # Create guest-fs.img (ext4), place in host-disk.img
 # Guest sees /dev/vda: mount /dev/vda /mnt

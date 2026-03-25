@@ -40,8 +40,8 @@
     toybox dd if=/dev/vblk0 of=/dev/shmem/varrun.img bs=65536
     devb-loopback loopback fd=/dev/shmem/varrun.img &
 
-    # Networking (SMSC LAN91C111)
-    io-sock -m fdt -m phy -d smc
+    # Networking (SMSC LAN91C111 + vdevpeer for guest networking)
+    io-sock -m fdt -m phy -d smc -m vdevpeer-net
     waitfor /dev/socket 5
 
     # Mount ext2 from loopback — contains guest files + writable storage
@@ -60,6 +60,8 @@
     # Linux guest (uncomment to auto-start at boot)
     # qvm @/guests/linux/linux-guest.qvmconf &
     # Guest console: toybox tail -f /dev/shmem/linux-guest.log
+    # After guest starts, configure host-side vdevpeer:
+    # ifconfig vp0 192.168.100.1 netmask 255.255.255.0 up
 
     # SSH server (ksh wrapper needed for absolute path requirement)
     ksh -c "/usr/sbin/sshd -h /etc/ssh/ssh_host_ed25519_key"
@@ -101,6 +103,7 @@ ldqnx-64.so.2=ldqnx-64.so.2
 /lib/dll/mods-phy.so=mods-phy.so
 /lib/dll/devs-vtnet_mmio.so=devs-vtnet_mmio.so
 /lib/dll/devs-smc.so=devs-smc.so
+/lib/dll/mods-vdevpeer-net.so=mods-vdevpeer-net.so
 /sbin/ifconfig=ifconfig
 /sbin/ping=ping
 /sbin/route=route
