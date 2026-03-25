@@ -57,8 +57,9 @@
     # ifconfig smc0 172.20.51.1 netmask 255.255.255.0 up
     # route add default 172.20.51.254
 
-    # Linux guest (start after networking for guest console output)
-    # qvm /guests/linux/linux-guest.qvmconf &
+    # Linux guest (uncomment to auto-start at boot)
+    # qvm @/guests/linux/linux-guest.qvmconf &
+    # Guest console: toybox tail -f /dev/shmem/linux-guest.log
 
     # SSH server (ksh wrapper needed for absolute path requirement)
     ksh -c "/usr/sbin/sshd -h /etc/ssh/ssh_host_ed25519_key"
