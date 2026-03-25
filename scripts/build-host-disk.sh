@@ -86,6 +86,10 @@ sudo cp "$LINUX_IMAGE" "$MOUNT_DIR/linux/Image"
 sudo cp "$ROOTFS_CPIO" "$MOUNT_DIR/linux/$(basename "$ROOTFS_CPIO")"
 sudo cp "$OUTPUT_DIR/linux-guest.dtb" "$MOUNT_DIR/linux/linux-guest.dtb"
 sudo cp "$GUEST_QVMCONF" "$MOUNT_DIR/linux/linux-guest.qvmconf"
+# Copy additional guest configs and tools if they exist
+for f in "$GUESTS_DIR"/linux-guest2.qvmconf "$GUESTS_DIR"/check-cntvct.sh; do
+    [ -f "$f" ] && sudo cp "$f" "$MOUNT_DIR/linux/"
+done
 
 echo "Contents:"
 ls -lh "$MOUNT_DIR/linux/"
