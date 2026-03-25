@@ -48,9 +48,12 @@
     toybox dd if=/dev/vblk0 of=/dev/hd0 bs=65536
     mount -t ext2 /dev/hd0 /var/run
 
-    # Static IP (FVP user networking: 172.20.51.0/24, gw 172.20.51.254)
-    ifconfig smc0 172.20.51.1 netmask 255.255.255.0 up
-    route add default 172.20.51.254
+    # DHCP (FVP user networking: 172.20.51.0/24, gw 172.20.51.254)
+    ifconfig smc0 up
+    dhcpcd -bqq smc0
+    # Static IP alternative (uncomment and comment out dhcpcd above):
+    # ifconfig smc0 172.20.51.1 netmask 255.255.255.0 up
+    # route add default 172.20.51.254
 
     # SSH server (ksh wrapper needed for absolute path requirement)
     ksh -c "/usr/sbin/sshd -h /etc/ssh/ssh_host_ed25519_key"
@@ -96,6 +99,9 @@ ldqnx-64.so.2=ldqnx-64.so.2
 /sbin/ping=ping
 /sbin/route=route
 /sbin/dhcpcd=dhcpcd
+/sbin/dhcpcd-run-hooks=${QNX_TARGET}/sbin/dhcpcd-run-hooks
+[type=dir] /sbin/dhcpcd-hooks
+/sbin/dhcpcd-hooks/20-resolv.conf=${QNX_TARGET}/sbin/dhcpcd-hooks/20-resolv.conf
 # VirtIO block driver (FVP workaround) + RAM disk for ext2 mount
 /sbin/devb-virtio-fvp=devb-virtio-fvp
 /sbin/devb-ram=devb-ram
