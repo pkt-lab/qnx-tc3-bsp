@@ -34,6 +34,22 @@ if [ -f "$GUEST_DIR/hello-guest.bin" ]; then
     cp "$GUEST_DIR/hello-guest.bin" "$OUTPUT_DIR/"
 fi
 
+# Create ext2 disk image for VirtIO block device (writable /var/run)
+VARRUN_IMG="$OUTPUT_DIR/varrun.img"
+if [ ! -f "$VARRUN_IMG" ]; then
+    echo "Creating VirtIO block disk image ($VARRUN_IMG)..."
+    dd if=/dev/zero of="$VARRUN_IMG" bs=1M count=4 2>/dev/null
+    mkfs.ext2 -q "$VARRUN_IMG"
+fi
+
+# Build devb-virtio-fvp driver if source is newer than binary
+VIRTIO_SRC="$REPO_ROOT/src/devb-virtio-fvp"
+if [ -f "$VIRTIO_SRC/devb-virtio-fvp.c" ] && [ "$VIRTIO_SRC/devb-virtio-fvp.c" -nt "$OUTPUT_DIR/devb-virtio-fvp" ]; then
+    echo "Building devb-virtio-fvp..."
+    ntoaarch64-gcc -Wall -O2 -o "$OUTPUT_DIR/devb-virtio-fvp" \
+        "$VIRTIO_SRC/devb-virtio-fvp.c" -I"$VIRTIO_SRC"
+fi
+
 echo "Building IFS from $BUILD_FILE..."
 MKIFS_PATH="$OUTPUT_DIR:$MKIFS_PATH" mkifs -v "$BUILD_FILE" "$OUTPUT_DIR/qnx-hv-host.ifs" 2>&1 | tail -5
 
