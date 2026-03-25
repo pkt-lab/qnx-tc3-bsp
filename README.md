@@ -7,7 +7,8 @@ Fixed Virtual Platform (FVP).
 ## Features
 
 - **8-core SMP** — all 3 subclusters (2×A520 + 4×A725 + 2×X925) via PSCI
-- **EL2 VHE hypervisor** — qvm guest support
+- **EL2 VHE hypervisor** — QVM with Linux guest (buildroot boots to shell)
+- **VirtIO block storage** — custom MMIO driver for FVP (workaround for FVP queue bug)
 - **Networking** — SMSC LAN91C111 driver (ported from FreeBSD), DHCP + SSH
 - **SSH access** — `ssh -p 8022 root@<host>` (empty password)
 - **FDT passthrough** — device tree via standard `-u arg` boot
@@ -28,36 +29,59 @@ source ~/qnx800/qnxsdp-env.sh
 ./scripts/run-fvp.sh
 
 # Connect via SSH
-ssh -p 8022 root@<amd-host-ip>
+ssh -p 8022 root@<host-ip>
+```
+
+## Linux Guest (QVM)
+
+Boot a Linux guest under QNX QVM hypervisor using the TC3 buildroot kernel and rootfs.
+
+### Build the TC3 Linux stack
+
+Follow the [TC3 User Guide](https://totalcompute.docs.arm.com/en/totalcompute/totalcompute/tc3/user-guide.html):
+
+```bash
+# Download TC3 source (one-time setup)
+export PLATFORM=tc3 FILESYSTEM=buildroot TC_TARGET_FLAVOR=fvp
+mkdir tc3-workspace && cd tc3-workspace
+repo init -u https://gitlab.arm.com/arm-reference-solutions/arm-reference-solutions-manifest \
+    -m tc3_a14.xml -b refs/tags/TC23.1 -g bsp
+repo sync -j6
+cd build-scripts && ./setup.sh
+
+# Build kernel + buildroot rootfs
+./run_docker.sh ./build-linux.sh build
+./run_docker.sh ./build-buildroot.sh build
+```
+
+Output files:
+- `output/tc3/buildroot/fvp/tmp_build/linux/arch/arm64/boot/Image` — Linux kernel
+- `output/tc3/buildroot/fvp/tmp_build/buildroot/images/rootfs.cpio.gz` — Buildroot rootfs
+
+### Build host disk image and launch guest
+
+```bash
+# Create host-disk.img with guest kernel + rootfs (no QNX SDP needed)
+LINUX_IMAGE=<tc3-workspace>/output/.../Image \
+ROOTFS_CPIO=<tc3-workspace>/output/.../rootfs.cpio.gz \
+./scripts/build-host-disk.sh
+
+# Boot QNX + launch Linux guest
+./scripts/run-fvp.sh
+ssh -p 8022 root@<host-ip>
+qvm @/guests/linux/linux-guest.qvmconf &
 ```
 
 ## Repository Structure
 
 ```
-src/
-├── startup-tc3/          # QNX startup driver (GIC-700, SMP, FDT, VHE)
-└── devs-smc/             # SMSC LAN91C111 network driver (FreeBSD port)
-
-configs/
-└── qnx-hv-host.build    # IFS build file (startup script, binaries, config)
-
-dts/
-├── tc3-fdt-qnx.patch    # TF-A DTS patches (simple-bus, virtio_net)
-└── README.md             # How to apply and rebuild firmware
-
-scripts/
-├── build-startup.sh      # Build startup-tc3 via QNX BSP tree
-├── build-ifs.sh          # Build QNX IFS + raw binary
-├── build-guest.sh        # Build qvm guest binary
-├── run-fvp.sh            # Launch FVP and boot QNX
-└── boot-qnx.exp          # U-Boot automation (expect script)
-
-guests/
-├── hello-guest.S          # Bare-metal qvm guest (assembly)
-└── hello-guest.qvmconf    # qvm guest configuration
-
-docs/
-└── ARCHITECTURE.md        # Design decisions and hardware map
+src/        # QNX drivers (startup-tc3, devs-smc, devb-virtio-fvp)
+configs/    # IFS build file (qnx-hv-host.build)
+dts/        # TF-A device tree patches for QNX
+guests/     # QVM guest configs and binaries (hello-guest, linux)
+scripts/    # Build and run scripts
+tools/      # Diagnostic utilities (virtio-probe)
+docs/       # Architecture documentation
 ```
 
 ## Boot Method

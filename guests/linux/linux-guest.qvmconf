@@ -1,0 +1,31 @@
+# QVM configuration for Linux guest on TC3 FVP
+#
+# Usage: qvm @/guests/linux/linux-guest.qvmconf
+
+system linux-guest
+
+# 256MB guest RAM
+ram 0x40000000,256M
+
+# Single CPU
+cpu
+
+# Linux kernel Image
+load 0x40200000,/guests/linux/Image
+
+# Initramfs (gzipped cpio — QVM auto-sets FDT linux,initrd-start/end)
+initrd load 0x48000000,/guests/linux/rootfs.cpio.gz
+
+# Device tree overlay (required for QVM to set initrd info in FDT)
+fdt load /guests/linux/linux-guest.dtb
+
+# Kernel command line
+cmdline "console=ttyAMA0 earlycon=pl011,0x1c090000 rdinit=/sbin/init loglevel=7"
+
+# Virtual GIC v3
+vdev gic version 3 gicd 0x2c000000 gicr 0x2c100000
+
+# Virtual PL011 UART
+vdev pl011
+    loc 0x1c090000
+    intr gic:37

@@ -100,7 +100,7 @@ nohup "$FVP_BIN" \
   --data css.sms.rse.sram1="${DEPLOY}/rse_encrypted_dm_provisioning_bundle_0.bin@0x0" \
   --data board.dram="${QNX_BIN}@${DRAM_OFFSET}" \
   --data board.dram="${QNX_DTB}@${FDT_DRAM_OFFSET}" \
-  -C board.virtioblockdevice.image_path="${REPO_ROOT}/output/varrun.img" \
+  -C board.virtioblockdevice.image_path="${HOST_DISK_IMG:-${REPO_ROOT}/output/host-disk.img}" \
   -C board.smsc_91c111.enabled=1 \
   -C board.hostbridge.userNetworking=1 \
   -C board.hostbridge.userNetPorts="8022=22" \

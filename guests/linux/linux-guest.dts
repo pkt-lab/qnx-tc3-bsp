@@ -1,0 +1,10 @@
+/dts-v1/;
+
+/*
+ * FDT overlay for Linux guest under QNX QVM on TC3 FVP.
+ * QVM auto-generates cpu, gic, timer, memory, initrd nodes.
+ * Keep this minimal — only add pass-through devices here.
+ */
+
+/ {
+};
