@@ -34,6 +34,9 @@
 #include <sys/types.h>
 #include <sys/procmgr.h>
 
+#include <sys/cam_device.h>
+#include <sys/dcmd_cam.h>
+
 #include "virtio-mmio.h"
 
 #define DEFAULT_ADDR    0x1c130000
@@ -356,6 +359,8 @@ static int virtio_io_read(resmgr_context_t *ctp, io_read_t *msg,
     pthread_mutex_lock(&io_lock);
     int err = virtio_blk_io(VIRTIO_BLK_T_IN, sector, nsectors);
     if (err) {
+        fprintf(stderr, "virtio: blk_io failed sector=%llu nsectors=%zu err=%d\n",
+                (unsigned long long)sector, nsectors, err);
         pthread_mutex_unlock(&io_lock);
         return err;
     }
@@ -368,6 +373,10 @@ static int virtio_io_read(resmgr_context_t *ctp, io_read_t *msg,
     pthread_mutex_unlock(&io_lock);
 
     _IO_SET_READ_NBYTES(ctp, actual);
+    ocb->offset += actual;
+    if (msg->i.nbytes > 0)
+        ocb->flags |= IOFUNC_ATTR_ATIME;
+    return EOK;
     ocb->offset += actual;
     if (msg->i.nbytes > 0)
         ocb->flags |= IOFUNC_ATTR_ATIME;
@@ -433,8 +442,35 @@ static int virtio_io_write(resmgr_context_t *ctp, io_write_t *msg,
 }
 
 /*
- * Resource manager: lseek support via default handler
+ * Resource manager: devctl handler (log + default)
  */
+static int virtio_io_devctl(resmgr_context_t *ctp, io_devctl_t *msg,
+                             iofunc_ocb_t *ocb)
+{
+    if (msg->i.dcmd == DCMD_CAM_DEVINFO) {
+        cam_devinfo_t info;
+        memset(&info, 0, sizeof(info));
+        info.num_sctrs = (uint32_t)capacity_sectors;
+        info.num_sctrs64 = capacity_sectors;
+        info.sctr_size = SECTOR_SIZE;
+        info.cylinders = 1;
+        info.heads = 1;
+        info.tracks = (uint32_t)capacity_sectors;
+        info.type = 0; /* direct access */
+        info.xfer_len_max = MAX_XFER_SECTORS;
+        info.xfer_len_optimal = MAX_XFER_SECTORS;
+        info.xfer_len_granularity = 1;
+
+        memset(&msg->o, 0, sizeof(msg->o));
+        msg->o.ret_val = EOK;
+        msg->o.nbytes = sizeof(info);
+        SETIOV(&ctp->iov[0], &msg->o, sizeof(msg->o));
+        SETIOV(&ctp->iov[1], &info, sizeof(info));
+        return _RESMGR_NPARTS(2);
+    }
+
+    return iofunc_devctl_default(ctp, msg, ocb);
+}
 
 int main(int argc, char *argv[])
 {
@@ -490,6 +526,7 @@ int main(int argc, char *argv[])
                      _RESMGR_IO_NFUNCS, &io_funcs);
     io_funcs.read = virtio_io_read;
     io_funcs.write = virtio_io_write;
+    io_funcs.devctl = virtio_io_devctl;
 
     iofunc_attr_init(&resmgr_attr, S_IFBLK | 0660, NULL, NULL);
     resmgr_attr.nbytes = capacity_sectors * SECTOR_SIZE;
