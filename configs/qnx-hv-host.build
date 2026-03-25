@@ -44,9 +44,10 @@
     io-sock -m fdt -m phy -d smc
     waitfor /dev/socket 5
 
-    # Mount ext2 from loopback device
+    # Mount ext2 from loopback — contains guest files + writable storage
     waitfor /dev/lo0 5
-    mount -t ext2 /dev/lo0 /var/run
+    mount -t ext2 /dev/lo0 /guests
+    procmgr_symlink /guests /var/run
 
     # DHCP (FVP user networking: 172.20.51.0/24, gw 172.20.51.254)
     toybox sleep 3
@@ -55,6 +56,9 @@
     # Static IP alternative (uncomment and comment out dhcpcd above):
     # ifconfig smc0 172.20.51.1 netmask 255.255.255.0 up
     # route add default 172.20.51.254
+
+    # Linux guest (start after networking for guest console output)
+    # qvm /guests/linux/linux-guest.qvmconf &
 
     # SSH server (ksh wrapper needed for absolute path requirement)
     ksh -c "/usr/sbin/sshd -h /etc/ssh/ssh_host_ed25519_key"
@@ -119,6 +123,7 @@ ldqnx-64.so.2=ldqnx-64.so.2
 /lib/dll/vdev-pl011.so=vdev-pl011.so
 /lib/dll/vdev-virtio-console.so=vdev-virtio-console.so
 /lib/dll/vdev-virtio-net.so=vdev-virtio-net.so
+/lib/dll/vdev-virtio-blk.so=vdev-virtio-blk.so
 # Guest files
 # Guest files (hello-guest.bin copied to output/ by build-ifs.sh)
 /guests/hello-guest.bin=hello-guest.bin
