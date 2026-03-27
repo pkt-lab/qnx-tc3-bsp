@@ -57,11 +57,17 @@
     # ifconfig smc0 172.20.51.1 netmask 255.255.255.0 up
     # route add default 172.20.51.254
 
-    # Linux guest (uncomment to auto-start at boot)
-    # qvm @/guests/linux/linux-guest.qvmconf &
-    # Guest console: toybox tail -f /dev/shmem/linux-guest.log
-    # After guest starts, configure host-side vdevpeer:
-    # ifconfig vp0 192.168.100.1 netmask 255.255.255.0 up
+    # Pre-create guest console log files
+    ksh -c "echo -n > /dev/shmem/linux-guest.log; echo -n > /dev/shmem/linux-guest2.log"
+    # Linux guests (auto-start)
+    qvm @/guests/linux/linux-guest.qvmconf &
+    qvm @/guests/linux/linux-guest2.qvmconf &
+    # After guests boot, configure vdevpeer (from ksh, NOT via SSH):
+    # ifconfig vp0 create && vpctl vp0 peer=/dev/qvm/linux-guest/vnet0
+    # ifconfig vp0 192.168.100.1/24 up
+    # ifconfig vp1 create && vpctl vp1 peer=/dev/qvm/linux-guest2/vnet0
+    # ifconfig vp1 192.168.200.1/24
+    # NOTE: ifconfig vp0 up crashes io-sock — QNX/FVP vdevpeer bug
 
     # SSH server (ksh wrapper needed for absolute path requirement)
     ksh -c "/usr/sbin/sshd -h /etc/ssh/ssh_host_ed25519_key"
@@ -104,6 +110,7 @@ ldqnx-64.so.2=ldqnx-64.so.2
 /lib/dll/devs-vtnet_mmio.so=devs-vtnet_mmio.so
 /lib/dll/devs-smc.so=devs-smc.so
 /lib/dll/mods-vdevpeer-net.so=mods-vdevpeer-net.so
+/sbin/vpctl=vpctl
 /sbin/ifconfig=ifconfig
 /sbin/ping=ping
 /sbin/route=route

@@ -32,4 +32,4 @@ vdev gic version 3 gicd 0x2c000000 gicr 0x2c100000
 vdev pl011
     loc 0x1c090000
     intr gic:37
-    hostdev >"|/usr/bin/toybox tee /dev/shmem/linux-guest2.log"
+    hostdev >/dev/shmem/linux-guest2.log
