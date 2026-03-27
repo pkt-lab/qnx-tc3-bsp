@@ -4,6 +4,9 @@
 
 system linux-guest
 
+# CNTVOFF=0: guest sees same counter as host (cross-VM time sync)
+set counter-offset 0
+
 # 256MB guest RAM
 ram 0x40000000,256M
 

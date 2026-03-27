@@ -1,0 +1,35 @@
+# QVM configuration for second Linux guest on TC3 FVP
+#
+# Usage: qvm @/guests/linux/linux-guest2.qvmconf &
+
+system linux-guest2
+
+# CNTVOFF=0: guest sees same counter as host (cross-VM time sync)
+set counter-offset 0
+
+# 256MB guest RAM
+ram 0x40000000,256M
+
+# 1 vCPU
+cpu
+
+# Linux kernel Image (shared with guest1)
+load 0x40200000,/guests/linux/Image
+
+# Initramfs
+initrd load 0x44800000,/guests/linux/rootfs.cpio.gz
+
+# Device tree overlay
+fdt load /guests/linux/linux-guest.dtb
+
+# Kernel command line
+cmdline "console=ttyAMA0 earlycon=pl011,0x1c090000 rdinit=/sbin/init loglevel=7"
+
+# Virtual GIC v3
+vdev gic version 3 gicd 0x2c000000 gicr 0x2c100000
+
+# Virtual PL011 UART (console logged to separate file)
+vdev pl011
+    loc 0x1c090000
+    intr gic:37
+    hostdev >"|/usr/bin/toybox tee /dev/shmem/linux-guest2.log"
